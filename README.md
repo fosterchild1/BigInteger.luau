@@ -1,1 +1,1 @@
-Luau implementation of BigInteger, typechecked and optimized to be blazingly fast.
+Luau implementation of Java's BigInteger with typechecking
