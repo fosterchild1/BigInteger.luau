@@ -12,6 +12,9 @@ export type BigInteger = setmetatable<{number} & {
 	read __sub: (self: BigInteger, subrahend: BigInteger | number) -> BigInteger,
 	read __tostring: (self: BigInteger) -> string,
 	
+	read Sign: (self: BigInteger) -> number,
+	read Negate: (self: BigInteger) -> BigInteger,
+	
 	read ShiftLeft: (self: BigInteger, bits: number) -> BigInteger,
 	
 	read AddRaw: (self: BigInteger, summand: BigInteger) -> BigInteger,
@@ -165,15 +168,13 @@ function BigInteger.new(num: any): BigInteger
 	return setmetatable(typeConstructors[typeof(num)](num), BigInteger) :: BigInteger
 end
 
-function BigInteger:Sign()
-	return self[1] > 0 and 1 or 1
+function BigInteger:Sign(): number
+	return self[#self :: BigInteger] > 0 and 1 or -1
 end
 
-function BigInteger:Negate()
-	local new: BigInteger = BigInteger.new(self)
-	new[1] = -new[1]
-	
-	return new
+function BigInteger:Negate(): BigInteger
+	self[#self :: BigInteger] = -(self :: BigInteger):Sign()
+	return self
 end
 
 -- =====================
@@ -197,7 +198,7 @@ function BigInteger:AddRaw(summand: BigInteger): BigInteger
 		else
 			carry = 0
 		end
-
+		
 		result[i] = sum
 	end
 
@@ -334,6 +335,9 @@ end
 -- ============
 --> METAMETHODS
 -- ============
+BigInteger.__unm = function(self: BigInteger): BigInteger
+	return self:Negate()
+end
 
 BigInteger.__add = function(self: BigInteger, summand: number | BigInteger): BigInteger
 	local bigint: BigInteger = ArgumentToBigInteger(summand, "add")
