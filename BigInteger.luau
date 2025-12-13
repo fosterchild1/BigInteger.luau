@@ -15,6 +15,8 @@ export type BigInteger = setmetatable<{
 	read __add: (self: BigInteger, summand: BigInteger | number) -> BigInteger,
 	read __sub: (self: BigInteger, subrahend: BigInteger | number) -> BigInteger,
 	read __eq: (self: BigInteger, num: BigInteger) -> boolean,
+	read __lt: (self: BigInteger, num: BigInteger) -> boolean,
+	read __le: (self: BigInteger, num: BigInteger) -> boolean,
 	read __tostring: (self: BigInteger) -> string,
 	read __len: (self: BigInteger) -> number,
 	
@@ -26,9 +28,15 @@ export type BigInteger = setmetatable<{
 	read SubtractRaw: (self: BigInteger, subrahend: BigInteger) -> BigInteger,
 	read MultiplyRaw: (self: BigInteger, factor: BigInteger) -> BigInteger,
 	read EqualsRaw: (self: BigInteger, num: BigInteger) -> boolean,
+	read LowerThanRaw: (self: BigInteger, num: BigInteger) -> boolean,
+	read LowerOrEqualToRaw: (self: BigInteger, num: BigInteger) -> boolean,
 	read ToStringRaw: (self: BigInteger) -> string
 	
 }, typeof(BigInteger)>
+
+-- =======================
+--> OPTIMIAZTION CONSTANTS
+-- =======================
 
 local log10: (number) -> number = math.log10
 local floor: (number) -> number = math.floor
@@ -44,6 +52,10 @@ local bor: (number, number) -> number = bit32.bor
 local tcreate = table.create
 local tinsert: <V>({V}, V) -> () & <V>({V}, number, V) -> () = table.insert
 local tremove = table.remove
+
+-- ==========
+--> CONSTANTS
+-- ==========
 
 local KARATSUBA_THRESHOLD: number = 5 -- in digits
 local MAX_LOSSLESS_POW: number = 53 -- 2^53
@@ -222,10 +234,11 @@ function BigInteger:AddRaw(summand: BigInteger): BigInteger
 	
 	--> CASES
 	print(selfSign, summandSign)
+	print(self, summand)
 	if summandSign == 0 then
 		return self
 	elseif selfSign == -1 and summandSign == 1 then
-		return self:Negate():SubtractRaw(summand)
+		return (self:Negate()):SubtractRaw(summand)
 	elseif selfSign ~= summandSign then
 		return self:SubtractRaw(summand)
 	end
@@ -365,7 +378,7 @@ end
 
 -- Returns true if self == num, false if not.
 function BigInteger:EqualsRaw(num: BigInteger): boolean
-	if (#self :: BigInteger) ~= #num then
+	if (#(self :: BigInteger) ~= #num) or (self.signum ~= num.signum) then
 		return false
 	end
 	
@@ -376,6 +389,36 @@ function BigInteger:EqualsRaw(num: BigInteger): boolean
 	end
 	
 	return true
+end
+
+-- Returns true if self < num, false if not.
+function BigInteger:LowerThanRaw(num: BigInteger): boolean
+	if (#(self :: BigInteger) < #num) or (self.signum < num.signum) then
+		return true
+	end
+	
+	for i: number, selfDigit: number in (self :: BigInteger).digits do
+		if selfDigit < num.digits[i] then
+			return true
+		end
+	end
+
+	return false 
+end
+
+-- Returns true if self <= num, false if not.
+function BigInteger:LowerOrEqualToRaw(num: BigInteger): boolean
+	if (#(self :: BigInteger) <= #num) or (self.signum < num.signum) then
+		return true
+	end
+
+	for i: number, selfDigit: number in (self :: BigInteger).digits do
+		if selfDigit <= num.digits[i] then
+			return true
+		end
+	end
+
+	return false 
 end
 
 -- ==================
@@ -416,9 +459,21 @@ BigInteger.__sub = function(self: BigInteger, subrahend: number | BigInteger): B
 end
 
 BigInteger.__eq = function(self: BigInteger, num: BigInteger): boolean
-	local bigint: BigInteger = ArgumentToBigInteger(num, "sub")
+	local bigint: BigInteger = ArgumentToBigInteger(num, "eq")
 
 	return self:EqualsRaw(bigint)
+end
+
+BigInteger.__lt = function(self: BigInteger, num: BigInteger): boolean
+	local bigint: BigInteger = ArgumentToBigInteger(num, "lt")
+
+	return self:LowerThanRaw(bigint)
+end
+
+BigInteger.__le = function(self: BigInteger, num: BigInteger): boolean
+	local bigint: BigInteger = ArgumentToBigInteger(num, "le")
+
+	return self:LowerOrEqualToRaw(bigint)
 end
 
 BigInteger.__tostring = function(self: BigInteger): string
