@@ -16,16 +16,18 @@
 local BigInteger = {}
 BigInteger.__index = BigInteger
 
+export type ValidConstructor = string & number & BigInteger & {number} & nil
+
 export type BigInteger = setmetatable<{
 	digits: {number},
 	signum: number,
 	
-	read __unm: (n: BigInteger) -> BigInteger,
-	read __add: (term: BigInteger, term: BigInteger | number) -> BigInteger,
-	read __sub: (term: BigInteger, term: BigInteger | number) -> BigInteger,
-	read __eq: (a: BigInteger, b: BigInteger) -> boolean,
-	read __lt: (a: BigInteger, b: BigInteger) -> boolean,
-	read __le: (a: BigInteger, b: BigInteger) -> boolean,
+	read __unm: (n: ValidConstructor) -> BigInteger,
+	read __add: (a: ValidConstructor, b: ValidConstructor) -> BigInteger,
+	read __sub: (a: ValidConstructor, b: ValidConstructor) -> BigInteger,
+	read __eq: (a: ValidConstructor, b: ValidConstructor) -> boolean,
+	read __lt: (a: ValidConstructor, b: ValidConstructor) -> boolean,
+	read __le: (a: ValidConstructor, b: ValidConstructor) -> boolean,
 	read __tostring: (n: BigInteger) -> string,
 	read __len: (n: BigInteger) -> number,
 	
@@ -40,7 +42,9 @@ export type BigInteger = setmetatable<{
 	read EqualsRaw: (self: BigInteger, num: BigInteger) -> boolean,
 	read LowerThanRaw: (self: BigInteger, num: BigInteger) -> boolean,
 	read LowerOrEqualToRaw: (self: BigInteger, num: BigInteger) -> boolean,
-	read ToStringRaw: (self: BigInteger) -> string
+	read ToStringRaw: (self: BigInteger) -> string,
+	
+	read Abs: (n: BigInteger) -> BigInteger
 	
 }, typeof(BigInteger)>
 
@@ -67,7 +71,7 @@ local tremove = table.remove
 --> CONSTANTS
 -- ==========
 
-local KARATSUBA_THRESHOLD: number = 5 -- in digits
+local KARATSUBA_THRESHOLD: number = 10 -- in digits
 local MAX_LOSSLESS_POW: number = 53 -- 2^53
 
 --> CONSTRUCTOR
@@ -244,7 +248,7 @@ end
 --> ARITHMETIC FUNCTIONS
 -- =====================
 
--- Returns a new BigInteger = x, where self + summand: BigInteger = x
+-- Returns a new BigInteger = x, whose value is equal to a + b.
 function BigInteger:AddRaw(term: BigInteger): BigInteger
 	local selfSign: number, summandSign: number = self.signum, term.signum
 	local sameSign: boolean = selfSign == summandSign
@@ -287,7 +291,8 @@ function BigInteger:AddRaw(term: BigInteger): BigInteger
 	result.signum = (if sameSign and selfSign == -1 then -1 else 1)
 	return result
 end
--- Returns a new BigInteger = x, where self - subrahend: BigInteger = x
+
+-- Returns a new BigInteger = x, whose value is equal to a - b.
 function BigInteger:SubtractRaw(term: BigInteger): BigInteger
 	local selfSign: number, termSign: number = self.signum, term.signum
 	local sameSign: boolean = (selfSign == termSign)
@@ -329,7 +334,7 @@ function BigInteger:SubtractRaw(term: BigInteger): BigInteger
 	return result
 end
 
--- Returns a BigInteger = x, where self * factor: BigInteger = x
+-- Returns a BigInteger = x, whose value is equal to a * b.
 function BigInteger:MultiplyRaw(factor: BigInteger)
 	local selfSign: number, factorSign: number = self.signum, factor.signum
 	
@@ -509,46 +514,60 @@ end
 --> METAMETHODS
 -- ============
 
-BigInteger.__unm = function(self: BigInteger): BigInteger
-	return self:Negate()
-end
-
-BigInteger.__add = function(self: BigInteger, term: number | BigInteger): BigInteger
-	local bigint: BigInteger = ArgumentToBigInteger(term, "add")
+BigInteger.__unm = function(num: ValidConstructor): BigInteger
+	local bigint: BigInteger = ArgumentToBigInteger(num, "unm")
 	
-	return self:AddRaw(bigint)
+	return bigint:Negate()
 end
 
-BigInteger.__sub = function(self: BigInteger, term: number | BigInteger): BigInteger
-	local bigint: BigInteger = ArgumentToBigInteger(term, "sub")
-
-	return self:SubtractRaw(bigint)
+BigInteger.__add = function(a: ValidConstructor, b: ValidConstructor): BigInteger
+	local term1: BigInteger = ArgumentToBigInteger(a, "add")
+	local term2: BigInteger = ArgumentToBigInteger(b, "add")
+	
+	return term1:AddRaw(term2)
 end
 
-BigInteger.__eq = function(self: BigInteger, num: BigInteger): boolean
-	local bigint: BigInteger = ArgumentToBigInteger(num, "eq")
+BigInteger.__sub = function(a: ValidConstructor, b: ValidConstructor): BigInteger
+	local term1: BigInteger = ArgumentToBigInteger(a, "sub")
+	local term2: BigInteger = ArgumentToBigInteger(b, "sub")
 
-	return self:EqualsRaw(bigint)
+	return term1:SubtractRaw(term2)
 end
 
-BigInteger.__lt = function(self: BigInteger, num: BigInteger): boolean
-	local bigint: BigInteger = ArgumentToBigInteger(num, "lt")
-
-	return self:LowerThanRaw(bigint)
+BigInteger.__eq = function(a: ValidConstructor, b: ValidConstructor): boolean
+	local term1: BigInteger = ArgumentToBigInteger(a, "eq")
+	local term2: BigInteger = ArgumentToBigInteger(b, "eq")
+	
+	return term1:EqualsRaw(term2)
 end
 
-BigInteger.__le = function(self: BigInteger, num: BigInteger): boolean
-	local bigint: BigInteger = ArgumentToBigInteger(num, "le")
-
-	return self:LowerOrEqualToRaw(bigint)
+BigInteger.__lt = function(a: ValidConstructor, b: ValidConstructor): boolean
+	local term1: BigInteger = ArgumentToBigInteger(a, "lt")
+	local term2: BigInteger = ArgumentToBigInteger(b, "lt")
+	
+	return term1:LowerThanRaw(term2)
 end
 
-BigInteger.__tostring = function(self: BigInteger): string
-	return self:ToStringRaw()
+BigInteger.__le = function(a: ValidConstructor, b: ValidConstructor): boolean
+	local term1: BigInteger = ArgumentToBigInteger(a, "le")
+	local term2: BigInteger = ArgumentToBigInteger(b, "le")
+
+	return term1:LowerOrEqualToRaw(term2)
 end
 
-BigInteger.__len = function(self: BigInteger): number
-	return rawlen(self.digits)
+BigInteger.__tostring = function(n: BigInteger): string
+	return n:ToStringRaw()
 end
 
-return table.freeze(BigInteger)
+BigInteger.__len = function(n: BigInteger): number
+	return rawlen(n.digits)
+end
+
+-- ===========
+--> EXTENSIONS
+-- ===========
+function BigInteger.Extend(func: (typeof(BigInteger)) -> ())
+	func(BigInteger)
+end
+
+return BigInteger
