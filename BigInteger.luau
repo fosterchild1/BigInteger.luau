@@ -20,22 +20,23 @@ export type BigInteger = setmetatable<{
 	digits: {number},
 	signum: number,
 	
-	read __unm: (self: BigInteger) -> BigInteger,
-	read __add: (self: BigInteger, summand: BigInteger | number) -> BigInteger,
-	read __sub: (self: BigInteger, subrahend: BigInteger | number) -> BigInteger,
-	read __eq: (self: BigInteger, num: BigInteger) -> boolean,
-	read __lt: (self: BigInteger, num: BigInteger) -> boolean,
-	read __le: (self: BigInteger, num: BigInteger) -> boolean,
-	read __tostring: (self: BigInteger) -> string,
-	read __len: (self: BigInteger) -> number,
+	read __unm: (n: BigInteger) -> BigInteger,
+	read __add: (term: BigInteger, term: BigInteger | number) -> BigInteger,
+	read __sub: (term: BigInteger, term: BigInteger | number) -> BigInteger,
+	read __eq: (a: BigInteger, b: BigInteger) -> boolean,
+	read __lt: (a: BigInteger, b: BigInteger) -> boolean,
+	read __le: (a: BigInteger, b: BigInteger) -> boolean,
+	read __tostring: (n: BigInteger) -> string,
+	read __len: (n: BigInteger) -> number,
 	
-	read Negate: (self: BigInteger) -> BigInteger,
+	read Negate: (n: BigInteger) -> BigInteger,
+	read InPlaceNegate: (n: BigInteger) -> BigInteger,
 	
-	read ShiftLeft: (self: BigInteger, digits: number) -> BigInteger,
+	read ShiftLeft: (n: BigInteger, digits: number) -> BigInteger,
 	
-	read AddRaw: (self: BigInteger, summand: BigInteger) -> BigInteger,
-	read SubtractRaw: (self: BigInteger, subrahend: BigInteger) -> BigInteger,
-	read MultiplyRaw: (self: BigInteger, factor: BigInteger) -> BigInteger,
+	read AddRaw: (term: BigInteger, term: BigInteger) -> BigInteger,
+	read SubtractRaw: (term: BigInteger, term: BigInteger) -> BigInteger,
+	read MultiplyRaw: (factor: BigInteger, factor: BigInteger) -> BigInteger,
 	read EqualsRaw: (self: BigInteger, num: BigInteger) -> boolean,
 	read LowerThanRaw: (self: BigInteger, num: BigInteger) -> boolean,
 	read LowerOrEqualToRaw: (self: BigInteger, num: BigInteger) -> boolean,
@@ -199,15 +200,15 @@ local function MultiplyKaratsuba(x: BigInteger, y: BigInteger): BigInteger
 		:AddRaw(z0)
 	
 	if x.signum ~= y.signum then
-		return result:Negate()
+		return result:InPlaceNegate()
 	end
 	
 	return result
 end
 
 local function StripLeadingZeros(bigint: BigInteger)
-	while #bigint > 1 and bigint.digits[1] == 0 do
-		tremove(bigint.digits, 1)
+	while #bigint > 1 and bigint.digits[#bigint] == 0 do
+		tremove(bigint.digits, #bigint.digits)
 	end
 end
 
@@ -233,31 +234,36 @@ function BigInteger:Negate(): BigInteger
 	return result
 end
 
+-- Flips the sign of the BigInteger in-place.
+function BigInteger:InPlaceNegate()
+	self.signum = -self.signum
+	return self
+end
+
 -- =====================
 --> ARITHMETIC FUNCTIONS
 -- =====================
 
 -- Returns a new BigInteger = x, where self + summand: BigInteger = x
-function BigInteger:AddRaw(summand: BigInteger): BigInteger
-	local selfSign: number, summandSign: number = self.signum, summand.signum
+function BigInteger:AddRaw(term: BigInteger): BigInteger
+	local selfSign: number, summandSign: number = self.signum, term.signum
+	local sameSign: boolean = selfSign == summandSign
 	
 	--> CASES
-	print(selfSign, summandSign)
-	print(self, summand)
 	if summandSign == 0 then
 		return self
 	elseif selfSign == -1 and summandSign == 1 then
-		return self:Negate():SubtractRaw(summand)
-	elseif selfSign ~= summandSign then
-		return self:SubtractRaw(summand)
+		return (self:Negate():SubtractRaw(term)):InPlaceNegate()
+	elseif not sameSign then -- +a+(-b)=a-b
+		return self:SubtractRaw(term:Negate())
 	end
 	
 	local result: BigInteger = BigInteger.new()
 	
 	-- largest
-	local digitsToAdd: number = (#(self :: BigInteger) > #summand and #(self :: BigInteger) or #summand)
+	local digitsToAdd: number = (#(self :: BigInteger) > #term and #(self :: BigInteger) or #term)
 	
-	local digitsSummand: {number}, digitsSelf: {number} = summand.digits, self.digits
+	local digitsSummand: {number}, digitsSelf: {number} = term.digits, self.digits
 	
 	--> from right to left
 	local carry: number = 0
@@ -278,28 +284,27 @@ function BigInteger:AddRaw(summand: BigInteger): BigInteger
 		result.digits[digitsToAdd + 1] = carry
 	end
 	
+	result.signum = (if sameSign and selfSign == -1 then -1 else 1)
 	return result
 end
 -- Returns a new BigInteger = x, where self - subrahend: BigInteger = x
-function BigInteger:SubtractRaw(subrahend: BigInteger): BigInteger
-	if subrahend.signum == 0 then
+function BigInteger:SubtractRaw(term: BigInteger): BigInteger
+	if term.signum == 0 then
 		return self
 	end
 	
-	print(self, subrahend)
-	if self:LowerThanRaw(subrahend) then
-		return subrahend:SubtractRaw(self):Negate()
+	if self:LowerThanRaw(term) then
+		return term:SubtractRaw(self):InPlaceNegate()
 	end
 	
 	local result: BigInteger = BigInteger.new()
 	
-	local digitsSelf: {number}, digitsSubrahend: {number} = self.digits, subrahend.digits
+	local digitsSelf: {number}, digitsSubrahend: {number} = self.digits, term.digits
 
 	--> from right to left
 	local borrow: number = 0
 	for i: number, digit: number in digitsSelf do
 		local diff: number = digit - (digitsSubrahend[i] :: number or 0) - borrow
-		print(digit, digitsSubrahend[i], diff, borrow)
 		if diff < 0 then
 			borrow = 1
 			diff = diff + 10
@@ -312,6 +317,7 @@ function BigInteger:SubtractRaw(subrahend: BigInteger): BigInteger
 	
 	StripLeadingZeros(result)
 	
+	result.signum = 1
 	return result
 end
 
@@ -321,7 +327,7 @@ function BigInteger:MultiplyRaw(factor: BigInteger)
 	
 	--> CASES
 	if selfSign == 0 or factorSign == 0 then
-		return BigInteger.new(0)
+		return BigInteger.new()
 	end
 	
 	local selfDigits: {number} = self.digits
@@ -371,10 +377,7 @@ function BigInteger:MultiplyRaw(factor: BigInteger)
 		result = result:AddRaw(mulResult)
 	end
 	
-	if self.signum ~= factor.signum then
-		result = result:Negate()
-	end
-
+	result.signum = (self.signum ~= factor.signum and -1 or 1)
 	return result
 end
 
@@ -415,7 +418,7 @@ end
 function BigInteger:LowerThanRaw(num: BigInteger): boolean
 	local selfSign: number, numSign: number = self.signum, num.signum
 	local selfLen: number, numLen: number = #(self :: BigInteger), #num
-	print(self, num)
+	
 	--> check sign
 	if selfSign < numSign then
 		return true
@@ -428,10 +431,10 @@ function BigInteger:LowerThanRaw(num: BigInteger): boolean
 	elseif selfLen < numLen then -- both positive
 		return true
 	end
-	print("Here")
+	
 	local selfDigits: {number}, numDigits: {number} = self.digits, num.digits
 	for i: number = #(self :: BigInteger), 1, -1 do
-		local sDigit: number, nDigit: number = selfDigits[i], numDigits[i]
+		local sDigit: number, nDigit: number = selfDigits[i], numDigits[i] or 0
 		if sDigit == nDigit then continue end
 		
 		return (bothNegative and sDigit > nDigit) or (sDigit < nDigit)
@@ -460,7 +463,7 @@ function BigInteger:LowerOrEqualToRaw(num: BigInteger): boolean
 
 	local selfDigits: {number}, numDigits: {number} = self.digits, num.digits
 	for i: number = #(self :: BigInteger), 1, -1 do
-		local sDigit: number, nDigit: number = selfDigits[i], numDigits[i]
+		local sDigit: number, nDigit: number = selfDigits[i], numDigits[i] or 0
 		if sDigit == nDigit then continue end
 
 		return (bothNegative and sDigit >= nDigit) or (sDigit <= nDigit)
@@ -494,14 +497,14 @@ BigInteger.__unm = function(self: BigInteger): BigInteger
 	return self:Negate()
 end
 
-BigInteger.__add = function(self: BigInteger, summand: number | BigInteger): BigInteger
-	local bigint: BigInteger = ArgumentToBigInteger(summand, "add")
+BigInteger.__add = function(self: BigInteger, term: number | BigInteger): BigInteger
+	local bigint: BigInteger = ArgumentToBigInteger(term, "add")
 	
 	return self:AddRaw(bigint)
 end
 
-BigInteger.__sub = function(self: BigInteger, subrahend: number | BigInteger): BigInteger
-	local bigint: BigInteger = ArgumentToBigInteger(subrahend, "sub")
+BigInteger.__sub = function(self: BigInteger, term: number | BigInteger): BigInteger
+	local bigint: BigInteger = ArgumentToBigInteger(term, "sub")
 
 	return self:SubtractRaw(bigint)
 end
