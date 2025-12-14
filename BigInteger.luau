@@ -2,6 +2,15 @@
 --!native
 --!strict
 
+-- ===============================================================
+--[[ 
+-- BigInteger.luau // fosterchild 2025 - Luau implementation of Java's BigInteger, with added typechecking.
+-- Licensed under The Unlicense.
+
+-- Documentation and source can be found at: https://github.com/fosterchild1/BigInteger.luau/tree/main
+--]]
+-- ===============================================================
+
 -- INSPO: https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/math/BigInteger.java
 
 local BigInteger = {}
@@ -219,7 +228,7 @@ end
 -- Returns a new BigInteger with its sign flipped.
 function BigInteger:Negate(): BigInteger
 	local result: BigInteger = BigInteger.new(self.digits)
-	result.signum = -result.signum
+	result.signum = -(self :: BigInteger).signum
 	
 	return result
 end
@@ -238,7 +247,7 @@ function BigInteger:AddRaw(summand: BigInteger): BigInteger
 	if summandSign == 0 then
 		return self
 	elseif selfSign == -1 and summandSign == 1 then
-		return (self:Negate()):SubtractRaw(summand)
+		return self:Negate():SubtractRaw(summand)
 	elseif selfSign ~= summandSign then
 		return self:SubtractRaw(summand)
 	end
@@ -277,6 +286,11 @@ function BigInteger:SubtractRaw(subrahend: BigInteger): BigInteger
 		return self
 	end
 	
+	print(self, subrahend)
+	if self:LowerThanRaw(subrahend) then
+		return subrahend:SubtractRaw(self):Negate()
+	end
+	
 	local result: BigInteger = BigInteger.new()
 	
 	local digitsSelf: {number}, digitsSubrahend: {number} = self.digits, subrahend.digits
@@ -285,7 +299,7 @@ function BigInteger:SubtractRaw(subrahend: BigInteger): BigInteger
 	local borrow: number = 0
 	for i: number, digit: number in digitsSelf do
 		local diff: number = digit - (digitsSubrahend[i] :: number or 0) - borrow
-	
+		print(digit, digitsSubrahend[i], diff, borrow)
 		if diff < 0 then
 			borrow = 1
 			diff = diff + 10
@@ -305,6 +319,7 @@ end
 function BigInteger:MultiplyRaw(factor: BigInteger)
 	local selfSign: number, factorSign: number = self.signum, factor.signum
 	
+	--> CASES
 	if selfSign == 0 or factorSign == 0 then
 		return BigInteger.new(0)
 	end
@@ -318,7 +333,7 @@ function BigInteger:MultiplyRaw(factor: BigInteger)
 
 	local result: BigInteger = BigInteger.new()
 	
-	-- do normal o(n^2) multiplication
+	-- do normal o(n^2) schoolgrade multiplication
 	for i: number, digit: number in selfDigits do
 		local carry: number = 0
 		local prependedZeros: number = i - 1
@@ -338,6 +353,7 @@ function BigInteger:MultiplyRaw(factor: BigInteger)
 			mulResult.digits[j + prependedZeros] = mul
 		end
 		
+		--> carry can "ripple" through the number. for example: 9999 + 1
 		while carry > 0 do
 			local last: number? = mulResult.digits[#mulResult + 1]
 			local sum: number = (last or 0) + carry
@@ -353,6 +369,10 @@ function BigInteger:MultiplyRaw(factor: BigInteger)
 		end
 		
 		result = result:AddRaw(mulResult)
+	end
+	
+	if self.signum ~= factor.signum then
+		result = result:Negate()
 	end
 
 	return result
@@ -393,14 +413,28 @@ end
 
 -- Returns true if self < num, false if not.
 function BigInteger:LowerThanRaw(num: BigInteger): boolean
-	if (#(self :: BigInteger) < #num) or (self.signum < num.signum) then
+	local selfSign: number, numSign: number = self.signum, num.signum
+	local selfLen: number, numLen: number = #(self :: BigInteger), #num
+	print(self, num)
+	--> check sign
+	if selfSign < numSign then
 		return true
 	end
 	
-	for i: number, selfDigit: number in (self :: BigInteger).digits do
-		if selfDigit < num.digits[i] then
-			return true
-		end
+	local bothNegative: boolean = (selfSign == numSign and selfSign == -1)
+	--> check their lengths. for negative, the lowest is with the most digits, and for positive its the lowest
+	if bothNegative and selfLen > numLen then
+		return true
+	elseif selfLen < numLen then -- both positive
+		return true
+	end
+	print("Here")
+	local selfDigits: {number}, numDigits: {number} = self.digits, num.digits
+	for i: number = #(self :: BigInteger), 1, -1 do
+		local sDigit: number, nDigit: number = selfDigits[i], numDigits[i]
+		if sDigit == nDigit then continue end
+		
+		return (bothNegative and sDigit > nDigit) or (sDigit < nDigit)
 	end
 
 	return false 
@@ -408,17 +442,31 @@ end
 
 -- Returns true if self <= num, false if not.
 function BigInteger:LowerOrEqualToRaw(num: BigInteger): boolean
-	if (#(self :: BigInteger) <= #num) or (self.signum < num.signum) then
+	local selfSign: number, numSign: number = self.signum, num.signum
+	local selfLen: number, numLen: number = #(self :: BigInteger), #num
+
+	--> check sign
+	if selfSign <= numSign then
 		return true
 	end
 
-	for i: number, selfDigit: number in (self :: BigInteger).digits do
-		if selfDigit <= num.digits[i] then
-			return true
-		end
+	local bothNegative: boolean = (selfSign == numSign and selfSign == -1)
+	--> check their lengths. for negative, the lowest is with the most digits, and for positive its the lowest
+	if bothNegative and selfLen >= numLen then
+		return true
+	elseif selfLen <= numLen then -- both positive
+		return true
 	end
 
-	return false 
+	local selfDigits: {number}, numDigits: {number} = self.digits, num.digits
+	for i: number = #(self :: BigInteger), 1, -1 do
+		local sDigit: number, nDigit: number = selfDigits[i], numDigits[i]
+		if sDigit == nDigit then continue end
+
+		return (bothNegative and sDigit >= nDigit) or (sDigit <= nDigit)
+	end
+	
+	return true 
 end
 
 -- ==================
