@@ -23,25 +23,20 @@ export type Extensions = {
 }
 
 BigInteger.Extend(function(tbl: typeof(BigInteger) | any)
-	function tbl:Abs(): BigInteger
+	function tbl:Abs(inPlace: boolean): BigInteger
+		if inPlace then
+			self.signum = -self.signum
+			return self
+		end
+		
 		local result = BigInteger.new(self)
 		result.signum = (result.signum > -1 and result.signum or 1)
 
 		return result
 	end
-
-	function tbl:AbsInPlace(): BigInteger
-		self.signum = (self.signum > -1 and self.signum or 1)
-
-		return self
-	end
 	
 	function tbl:IsEven(): boolean
 		return (self :: BigInteger).digits[1] % 2 == 0
-	end
-	
-	function tbl:IsOdd(): boolean
-		return (self :: BigInteger).digits[1] % 2 ~= 0
 	end
 end)
 
