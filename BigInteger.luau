@@ -72,36 +72,25 @@ local tremove = table.remove
 
 local KARATSUBA_THRESHOLD: number = 10 -- in limbs
 local MAX_LOSSLESS_POW: number = 53 -- 2^53
-local BASE_POW: number = 14 -- MUST SATISFY: 10^(BASE_POW+1) < 2^53
+local BASE_POW: number = 6 -- MUST SATISFY: 10^((BASE_POW+1) * 2) < 2^53, because of multiplying
+local BASE: number = 10 ^ BASE_POW
 
 --> CONSTRUCTOR
 local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 	["string"] = function(str: string): ({number}, number)
 		local isNegative: boolean = str:sub(1, 1) == "-"
-		local startIdx: number = isNegative and 2 or 1
 		
-		local len: number = #str - startIdx + 1
-		local arrSize: number = ceil(len / BASE_POW)
-
-		local arr: {number} = tcreate(arrSize, 0)
+		local arr: {number} = {}
 		
-		--> loop with base BASE
-		local strPos: number = startIdx
-		local i: number = startIdx
+		local i: number = #str
 		repeat
-			local chars: string = str:sub(strPos, strPos + BASE_POW - 1)
-			if chars == "" then break end
-			
+			local chars: string = str:sub(math.max(i - BASE_POW + 2, 1), i)
 			local num: number? = tonumber(chars)
-
-			assert(
-				num, 
-				`attempt to create BigInteger from string containing non-digit characters: {str}`)
+			if not num then break end
 			
-			arr[arrSize - i + 1 ] = num
-			i += 1
-			strPos += BASE_POW
-		until strPos >= len + BASE_POW
+			i -= BASE_POW - 1
+			tinsert(arr, num)
+		until i < (isNegative and 2 or 1)
 		
 		return arr, (isNegative and -1 or 1)
 	end,
@@ -192,7 +181,7 @@ local function GetKaratsubaUpper(int: BigInteger, n: number): BigInteger
 	return BigInteger.new(new)
 end
 
-local function MultiplyKaratsuba(x: BigInteger, y: BigInteger): BigIntegerBigInteger
+local function MultiplyKaratsuba(x: BigInteger, y: BigInteger): BigInteger
 	local m2: number = max(#x, #y)//2
 
 	local low1: BigInteger, low2: BigInteger = GetKaratsubaLower(x, m2), GetKaratsubaLower(y, m2)
@@ -261,7 +250,7 @@ function BigInteger:AddRaw(term: BigInteger): BigInteger
 	--> CASES
 	if summandSign == 0 then
 		return self
-	elseif selfSign == -1 and summandSign == 1 then
+	elseif selfSign == -1 and summandSign == 1 then -- -a+b = b+(-a) = b-a
 		return (self:Negate(false):SubtractRaw(term)):Negate(true)
 	elseif not sameSign then -- +a+(-b)=a-b
 		return self:SubtractRaw(term:Negate(true))
@@ -278,10 +267,11 @@ function BigInteger:AddRaw(term: BigInteger): BigInteger
 	local carry: number = 0
 	for i: number = 1, limbsToAdd do
 		local sum: number = (limbsSelf[i] :: number or 0) + (limbsSummand[i] :: number or 0) + carry
-
-		if sum > 9 then
+		print(limbsSelf[i], limbsSummand[i], sum, carry)
+		if sum >= BASE then
 			carry = 1
-			sum = sum - 10
+			sum = sum - BASE
+			print(carry, sum)
 		else
 			carry = 0
 		end
