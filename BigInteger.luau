@@ -22,15 +22,6 @@ export type BigInteger = setmetatable<{
 	limbs: {number},
 	signum: number,
 	
-	read __unm: (n: ValidConstructor) -> BigInteger,
-	read __add: (a: ValidConstructor, b: ValidConstructor) -> BigInteger,
-	read __sub: (a: ValidConstructor, b: ValidConstructor) -> BigInteger,
-	read __eq: (a: ValidConstructor, b: ValidConstructor) -> boolean,
-	read __lt: (a: ValidConstructor, b: ValidConstructor) -> boolean,
-	read __le: (a: ValidConstructor, b: ValidConstructor) -> boolean,
-	read __tostring: (n: BigInteger) -> string,
-	read __len: (n: BigInteger) -> number,
-	
 	read Negate: (n: BigInteger, inPlace: boolean) -> BigInteger,
 
 	read ShiftLeft: (n: BigInteger, limbs: number) -> BigInteger,
@@ -81,18 +72,19 @@ local BASE: number = 10 ^ BASE_POW
 local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 	["string"] = function(str: string): ({number}, number)
 		local isNegative: boolean = str:sub(1, 1) == "-"
+		local strStart: number = isNegative and 2 or 1
 		
 		local arr: {number} = {}
 		
 		local i: number = #str
 		repeat
-			local chars: string = str:sub(math.max(i - BASE_POW + 1, 1), i)
+			local chars: string = str:sub(math.max(i - BASE_POW + 1, strStart), i)
 			local num: number? = tonumber(chars)
 			if not num then break end
 			
 			i -= BASE_POW
 			tinsert(arr, num)
-		until i < (isNegative and 2 or 1)
+		until i < strStart
 		
 		return arr, (isNegative and -1 or 1)
 	end,
@@ -269,14 +261,12 @@ function BigInteger:AddRaw(term: BigInteger): BigInteger
 	local carry: number = 0
 	for i: number = 1, limbsToAdd do
 		local sum: number = (limbsSelf[i] :: number or 0) + (limbsSummand[i] :: number or 0) + carry
-		print(limbsSelf[i], limbsSummand[i], sum, carry)
+		
 		if sum >= BASE then
 			carry = 1
 			sum = sum - BASE
-			print(carry, sum)
 		else
 			carry = 0
-			print("r")
 		end
 		
 		result.limbs[i] = sum
@@ -296,6 +286,7 @@ function BigInteger:SubtractRaw(term: BigInteger): BigInteger
 	local sameSign: boolean = (selfSign == termSign)
 	
 	--> CASES
+	print(#(self :: BigInteger))
 	if termSign == 0 then
 		return self
 	elseif termSign == -1 and selfSign == 1 then
@@ -318,7 +309,7 @@ function BigInteger:SubtractRaw(term: BigInteger): BigInteger
 		local diff: number = digit - (limbsSubrahend[i] :: number or 0) - borrow
 		if diff < 0 then
 			borrow = 1
-			diff = diff + 10
+			diff = diff + BASE
 		else
 			borrow = 0
 		end
@@ -395,12 +386,15 @@ end
 -- Returns a new string representation of a BigInteger
 function BigInteger:ToString(): string
 	local str: string = (self.signum == -1 and "-" or "")
-	
-	local limbs: {number} = self.limbs
 
+	local limbs: {number} = self.limbs
+	str = str..limbs[#limbs]
+	
+	local formatStr: string = `%0{BASE_POW}d`
+	
 	--> from left to right
-	for i: number = #limbs, 1, -1 do
-		str ..= sformat("%06d", limbs[i]) -- prepend dem zeros
+	for i: number = #limbs - 1, 1, -1 do
+		str ..= sformat(formatStr, limbs[i]) -- prepend dem zeros
 	end
 
 	return str
