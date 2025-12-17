@@ -56,6 +56,7 @@ local bor: (number, number) -> number = bit32.bor
 local tcreate = table.create
 local tinsert: <V>({V}, V) -> () & <V>({V}, number, V) -> () = table.insert
 local tremove = table.remove
+local tclone: <T>(T) -> T = table.clone
 
 local sformat: (string, ...unknown) -> string = string.format
 
@@ -108,7 +109,7 @@ local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 	["table"] = function(tbl: {any}): ({number}, number)
 		local first: any = tbl[1]
 		if not first then
-			return {}, 0
+			return {0}, 0
 		end
 		
 		assert(
@@ -120,7 +121,7 @@ local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 	end,
 
 	["nil"] = function(_: nil): ({number}, number)
-		return {}, 0
+		return {0}, 0
 	end,
 }
 
@@ -186,7 +187,7 @@ local function MultiplyKaratsuba(x: BigInteger, y: BigInteger): BigInteger
 	local z2: BigInteger = high1:MultiplyRaw(high2)
 
 	-- (z2 × BASE ^ (m2 × 2)) + ((z1 - z2 - z0) × BASE ^ m2) + z0
-	-- since base is 10, we can just prepend zeros to avoid slow exponentiation
+	-- since base is a power of 10, we can just prepend zeros to avoid slow exponentiation
 	local result = z2:LeftShift(m2 * 2)
 		:AddRaw(
 			(z1:SubtractRaw(z2):SubtractRaw(z0)):LeftShift(m2)
@@ -218,6 +219,14 @@ function BigInteger.new(num: string | number | {number}?): BigInteger
 		limbs = limbs,
 		signum = signum
 	}, BigInteger) :: BigInteger
+end
+
+-- Returns a copy of the BigInteger.
+function BigInteger.clone(n: BigInteger): BigInteger
+	local result = BigInteger.new(n.limbs)
+	result.signum = n.signum
+	
+	return result
 end
 
 -- Returns a new BigInteger with its sign flipped.
@@ -286,7 +295,6 @@ function BigInteger:SubtractRaw(term: BigInteger): BigInteger
 	local sameSign: boolean = (selfSign == termSign)
 	
 	--> CASES
-	print(#(self :: BigInteger))
 	if termSign == 0 then
 		return self
 	elseif termSign == -1 and selfSign == 1 then
@@ -339,25 +347,25 @@ function BigInteger:MultiplyRaw(factor: BigInteger)
 		return MultiplyKaratsuba(self, factor)
 	end
 
-	local result: BigInteger = BigInteger.new()
+	local result: BigInteger = BigInteger.new({0})
 	
 	-- do normal o(n^2) schoolgrade multiplication
 	for i: number, digit: number in selflimbs do
 		local carry: number = 0
 		local prependedZeros: number = i - 1
 		
-		local mulResult: BigInteger = BigInteger.new(tcreate(prependedZeros, 0)) -- prepend zeros
+		local mulResult: BigInteger = BigInteger.new(tcreate(prependedZeros, 0), 1) -- prepend zeros
+		mulResult.signum = 1
 		
 		for j: number, factorDigit: number in factorlimbs do
 			local mul: number = digit * factorDigit + carry
 			
-			if mul > 9 then
-				carry = mul // 10
-				mul = mul % 10
+			if mul > BASE then
+				carry = mul // BASE
+				mul = mul % BASE
 			else
 				carry = 0
 			end
-			
 			mulResult.limbs[j + prependedZeros] = mul
 		end
 		
@@ -366,9 +374,9 @@ function BigInteger:MultiplyRaw(factor: BigInteger)
 			local last: number? = mulResult.limbs[#mulResult + 1]
 			local sum: number = (last or 0) + carry
 			
-			if sum > 9 then
+			if sum >= BASE then
 				carry = 1
-				sum = sum - 10
+				sum = sum - BASE
 			else
 				carry = 0
 			end
@@ -386,9 +394,12 @@ end
 -- Returns a new string representation of a BigInteger
 function BigInteger:ToString(): string
 	local str: string = (self.signum == -1 and "-" or "")
-
+	if self.signum == 0 then
+		return "0"
+	end
+	
 	local limbs: {number} = self.limbs
-	str = str..limbs[#limbs]
+	str ..=limbs[#limbs]
 	
 	local formatStr: string = `%0{BASE_POW}d`
 	
@@ -489,7 +500,7 @@ end
 --> "BOOLEAN" FUNCTIONS
 -- ==================
 
--- Returns a new BigInteger = x, where self * 10^limbs = x
+-- Returns a new BigInteger = x, where self * 10^(BASE*amount) = x
 function BigInteger:LeftShift(amount: number)
 	local result = BigInteger.new(self.limbs)
 	
