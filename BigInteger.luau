@@ -48,16 +48,9 @@ local ceil: (number) -> number = math.ceil
 local max: (number) -> number = math.max
 local sign: (number) -> number = math.sign
 
-local rshift: (number, number) -> number = bit32.rshift
-local lshift: (number, number) -> number = bit32.lshift
-local band: (number, number) -> number = bit32.band
-local bor: (number, number) -> number = bit32.bor
-
 local tcreate = table.create
 local tinsert: <V>({V}, V) -> () & <V>({V}, number, V) -> () = table.insert
 local tremove = table.remove
-local tclone: <T>(T) -> T = table.clone
-local tpack: <V>(...V) -> {[number]: V} = table.pack
 
 local sformat: (string, ...unknown) -> string = string.format
 
@@ -71,7 +64,7 @@ local SAFE_UNPACK_THRESHOLD: number = 8000 -- unpack() max size
 local MAX_LOSSLESS_POW: number = 53 -- 2^53
 local MAX_LOSSLESS_INT: number = 2^MAX_LOSSLESS_POW-1
 
-local BASE_POW: number = 6 -- MUST SATISFY: 10^((BASE_POW+1) * 2) < 2^53, because of multiplying
+local BASE_POW: number = 7 -- MUST SATISFY: 10^((BASE_POW+1) * 2) < 2^53, because of multiplying
 local BASE: number = 10 ^ BASE_POW
 
 --> CONSTRUCTOR
@@ -117,10 +110,10 @@ local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 			return {0}, 0
 		end
 		
-		assert(
+		--[[assert(
 			typeof(first) == "number",
 			"attempt to create BigInteger from a table with non-int values"
-		)
+		)]]
 		
 		return tbl, 1
 	end,
@@ -174,6 +167,7 @@ local function GetKaratsubaUpper(int: BigInteger, n: number): BigInteger
 	local limbs: {number} = int.limbs
 
 	if #limbs < SAFE_UNPACK_THRESHOLD then
+		-- table.pack is faster here but FOR SOME REASON IT INCLUDES ["N"] IN THE ARRAY TOO?!
 		return BigInteger.new({
 			select(n + 1, unpack(limbs)) :: number
 		})
@@ -235,10 +229,10 @@ end
 
 -- Returns a copy of the BigInteger.
 function BigInteger.clone(n: BigInteger): BigInteger
-	local result = BigInteger.new(n.limbs)
-	result.signum = n.signum
-	
-	return result
+	return setmetatable({
+		limbs = n.limbs,
+		signum = n.signum
+	}, BigInteger) :: BigInteger
 end
 
 -- Returns a new BigInteger with its sign flipped.
@@ -248,8 +242,8 @@ function BigInteger:Negate(inPlace: boolean): BigInteger
 		return self
 	end
 	
-	local result: BigInteger = BigInteger.new(self.limbs)
-	result.signum = -(self :: BigInteger).signum
+	local result: BigInteger = BigInteger.clone(self)
+	result.signum = -result.signum
 	
 	return result
 end
@@ -344,7 +338,7 @@ function BigInteger:SubtractRaw(term: BigInteger): BigInteger
 end
 
 -- Returns a BigInteger = x, whose value is equal to a * b.
-function BigInteger:MultiplyRaw(factor: BigInteger)
+function BigInteger:MultiplyRaw(factor: BigInteger): BigInteger
 	local selfSign: number, factorSign: number = self.signum, factor.signum
 	
 	--> CASES
@@ -451,7 +445,7 @@ function BigInteger:LowerThanRaw(num: BigInteger): boolean
 	if selfSign < numSign then
 		return true
 	end
-	-- -317314, -717729
+	
 	local bothNegative: boolean = (selfSign == numSign and selfSign == -1)
 	--> check their lengths. for negative, the lowest is with the most limbs, and for positive its the lowest
 	if bothNegative and selfLen > numLen then
@@ -547,6 +541,13 @@ BigInteger.__sub = function(a: ValidConstructor, b: ValidConstructor): BigIntege
 	local term2: BigInteger = ArgumentToBigInteger(b, "sub")
 
 	return term1:SubtractRaw(term2)
+end
+
+BigInteger.__mul = function(a: ValidConstructor, b: ValidConstructor): BigInteger
+	local term1: BigInteger = ArgumentToBigInteger(a, "mul")
+	local term2: BigInteger = ArgumentToBigInteger(b, "mul")
+
+	return term1:MultiplyRaw(term2)
 end
 
 BigInteger.__eq = function(a: ValidConstructor, b: ValidConstructor): boolean
