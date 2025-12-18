@@ -32,9 +32,12 @@ export type BigInteger = setmetatable<{
 	read AddRaw: (term: BigInteger, term: BigInteger) -> BigInteger,
 	read SubtractRaw: (term: BigInteger, term: BigInteger) -> BigInteger,
 	read MultiplyRaw: (factor: BigInteger, factor: BigInteger) -> BigInteger,
+	read DivideRaw: (divisor: BigInteger) -> BigInteger,
+	
 	read EqualsRaw: (self: BigInteger, num: BigInteger) -> boolean,
 	read LowerThanRaw: (self: BigInteger, num: BigInteger) -> boolean,
 	read LowerOrEqualToRaw: (self: BigInteger, num: BigInteger) -> boolean,
+	
 	read ToString: (self: BigInteger) -> string	
 }, typeof(BigInteger)>
 
@@ -48,9 +51,9 @@ local ceil: (number) -> number = math.ceil
 local max: (number) -> number = math.max
 local sign: (number) -> number = math.sign
 
-local tcreate = table.create
+local tcreate: <V>(number, V?) -> {V} = table.create
 local tinsert: <V>({V}, V) -> () & <V>({V}, number, V) -> () = table.insert
-local tremove = table.remove
+local tremove: <V>({V}, number?) -> V? = table.remove
 
 local sformat: (string, ...unknown) -> string = string.format
 
@@ -92,16 +95,15 @@ local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 		if num == 0 then
 			return {0}, 0
 		end
-
-		local limbs: number = ceil(log10(num)/BASE_POW)
-		local arr: {number} = tcreate(limbs, 0)
-
-		for i: number = 1, limbs do
-			arr[i] = floor(num % BASE)
+		local actualSign: number = sign(num)
+		
+		local arr: {number} = {}
+		while num > 0 do
+			tinsert(arr, floor(num % BASE))
 			num //= BASE
 		end
 		
-		return arr, sign(num)
+		return arr, actualSign
 	end,
 	
 	["table"] = function(tbl: {any}): ({number}, number)
@@ -152,13 +154,14 @@ end
 local function GetKaratsubaLower(int: BigInteger, n: number): BigInteger
 	local limbs: {number} = int.limbs
 	
-	local new: {number} = tcreate(n, 0)
+	local result: BigInteger = BigInteger.new(tcreate(n, 0))
+	local resultlimbs: {number} = result.limbs
 	
 	for i: number = 1, n do
-		new[i] = limbs[i]
+		resultlimbs[i] = limbs[i]
 	end
 	
-	return BigInteger.new(new)
+	return result
 end
 
 local function GetKaratsubaUpper(int: BigInteger, n: number): BigInteger
@@ -173,13 +176,14 @@ local function GetKaratsubaUpper(int: BigInteger, n: number): BigInteger
 		})
 	end
 	
-	local new: {number} = --[[tcreate(#limbs - n - 1, 0)]]{} -- TODO: tcreate here
+	local result: BigInteger = BigInteger.new() -- TODO: tcreate here
+	local resultLimbs: {number} = result.limbs
 	
 	for i: number = n + 1, #limbs do
-		tinsert(new, limbs[i])
+		tinsert(resultLimbs, limbs[i])
 	end
 	
-	return BigInteger.new(new)
+	return result
 end
 
 local function MultiplyKaratsuba(x: BigInteger, y: BigInteger): BigInteger
@@ -363,7 +367,7 @@ function BigInteger:MultiplyRaw(factor: BigInteger): BigInteger
 		local carry: number = 0
 		local prependedZeros: number = i - 1
 		
-		local mulResult: BigInteger = BigInteger.new(tcreate(prependedZeros, 0), 1) -- prepend zeros
+		local mulResult: BigInteger = BigInteger.new(tcreate(prependedZeros + #factorlimbs, 0))
 		mulResult.signum = 1
 		
 		for j: number, factorDigit: number in factorlimbs do
@@ -398,6 +402,84 @@ function BigInteger:MultiplyRaw(factor: BigInteger): BigInteger
 	
 	result.signum = (self.signum ~= factor.signum and -1 or 1)
 	return result
+end
+
+-- Returns a BigInteger = x, whose value is equal to a / b.
+function BigInteger:DivideRaw(divisor: BigInteger): BigInteger
+	if divisor.signum == 0 or self.signum == 0 then
+		return BigInteger.new()
+	end
+
+	--print(self, divisor)
+	local U: {number}, V: {number} = (self :: BigInteger).limbs, divisor.limbs
+
+	--> d0. defs
+	local n: number = #V
+	local m: number = #U - n
+	
+	local Vn: number = V[n]
+
+	local quotient: BigInteger = BigInteger.new(tcreate(m + 1, 0))
+
+	--> we dont need to normalize because we arent limited by 32/64 bit math
+	local D: BigInteger = BigInteger.new(BASE // (Vn + 1))
+	
+	--> d2. init j
+	local qhat: number, rhat: number = 0, 0
+	for j: number = m, 0, -1 do
+		--> d3. calculate qhat and rhat
+		
+		-- bigints for qhat and rhat are not needed, because un[x] is at most BASE
+		-- currently, BASE * BASE + BASE < 2^53
+		local nPlusJ: number = n + j + 1
+		local top: number = (U[nPlusJ] or 0) * BASE + (U[nPlusJ - 1] or 0)
+		qhat = top // Vn
+		rhat = top % Vn
+
+		--> correction here
+		while (qhat >= BASE) or (qhat * (V[n - 1] or 0) > rhat * BASE + (U[nPlusJ - 2] or 0)) do
+			qhat -= 1
+			rhat += Vn
+			if rhat >= BASE then break end
+		end
+
+		--> d4. multiply & subtract	
+		local k: number = 0
+		local t: number = 0
+		for i: number = 1, n do
+			local IplusJ: number = i + j
+			local p: number = qhat * V[i]
+			local t: number = U[IplusJ] - k - p % BASE
+			
+			U[IplusJ] = t % BASE
+			k = p // BASE + (t < 0 and 1 or 0)
+		end
+
+		t = (U[nPlusJ] or 0) - k
+		U[nPlusJ] = t
+
+		--> d5. test reminder
+		quotient.limbs[j + 1] = qhat
+		if t >= 0 then continue end
+
+		--> d6
+		quotient.limbs[j + 1] -= 1
+		k = 0
+		for i: number = 1, n do
+			t = U[i + j] + V[i] + k
+
+			--> cant do bitwise ops again
+			U[i + j] = t % BASE
+			k = t // BASE
+		end
+		U[nPlusJ] = U[nPlusJ] + k
+	end
+
+	if divisor.signum ~= self.signum then
+		return quotient:Negate(true)
+	end
+
+	return quotient
 end
 
 -- Returns a new string representation of a BigInteger
@@ -552,6 +634,14 @@ BigInteger.__mul = function(a: ValidMetamethodArgument, b: ValidMetamethodArgume
 
 	return term1:MultiplyRaw(term2)
 end
+
+local function divMeta(a: ValidMetamethodArgument, b: ValidMetamethodArgument): BigInteger
+	local term1: BigInteger = ArgumentToBigInteger(a, "mul")
+	local term2: BigInteger = ArgumentToBigInteger(b, "mul")
+
+	return term1:DivideRaw(term2)
+end
+BigInteger.__div, BigInteger.__idiv = divMeta, divMeta
 
 BigInteger.__eq = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
 	local term1: BigInteger = ArgumentToBigInteger(a, "eq")
