@@ -4,42 +4,40 @@
 
 -- ===============================================================
 --[[ 
--- BigInteger.luau // fosterchild 2025 - Luau implementation of Java's BigInteger, with added typechecking.
+-- AptInt.luau // fosterchild 2025 - Luau implementation of BigInteger, with added typechecking.
 -- Licensed under The Unlicense.
 
--- Documentation and source can be found at: https://github.com/fosterchild1/BigInteger.luau/tree/main
+-- Documentation and source can be found at: https://github.com/fosterchild1/AptInt/tree/main
 --]]
 -- ===============================================================
 
--- INSPO: https://github.com/openjdk/jdk/blob/master/src/java.base/share/classes/java/math/BigInteger.java
+local AptInt = {}
+AptInt.__index = AptInt
 
-local BigInteger = {}
-BigInteger.__index = BigInteger
+export type ValidConstructor = string | number | AptInt | {number} | nil
+export type ValidMetamethodArgument = string | number | AptInt
 
-export type ValidConstructor = string | number | BigInteger | {number} | nil
-export type ValidMetamethodArgument = string | number | BigInteger
-
-export type BigInteger = setmetatable<{
+export type AptInt = setmetatable<{
 	limbs: {number},
 	signum: number,
 	
-	read clone: (n: BigInteger) -> BigInteger,
+	read clone: (n: AptInt) -> AptInt,
 	
-	read Negate: (n: BigInteger, inPlace: boolean) -> BigInteger,
+	read Negate: (n: AptInt, inPlace: boolean) -> AptInt,
 
-	read ShiftLeft: (n: BigInteger, limbs: number) -> BigInteger,
+	read ShiftLeft: (n: AptInt, limbs: number) -> AptInt,
 	
-	read AddRaw: (term: BigInteger, term: BigInteger) -> BigInteger,
-	read SubtractRaw: (term: BigInteger, term: BigInteger) -> BigInteger,
-	read MultiplyRaw: (factor: BigInteger, factor: BigInteger) -> BigInteger,
-	read DivideRaw: (divisor: BigInteger) -> (BigInteger, BigInteger),
+	read AddRaw: (term: AptInt, term: AptInt) -> AptInt,
+	read SubtractRaw: (term: AptInt, term: AptInt) -> AptInt,
+	read MultiplyRaw: (factor: AptInt, factor: AptInt) -> AptInt,
+	read DivideRaw: (divisor: AptInt) -> (AptInt, AptInt),
 	
-	read EqualsRaw: (self: BigInteger, num: BigInteger) -> boolean,
-	read LowerThanRaw: (self: BigInteger, num: BigInteger) -> boolean,
-	read LowerOrEqualToRaw: (self: BigInteger, num: BigInteger) -> boolean,
+	read EqualsRaw: (self: AptInt, num: AptInt) -> boolean,
+	read LowerThanRaw: (self: AptInt, num: AptInt) -> boolean,
+	read LowerOrEqualToRaw: (self: AptInt, num: AptInt) -> boolean,
 	
-	read ToString: (self: BigInteger) -> string	
-}, typeof(BigInteger)>
+	read ToString: (self: AptInt) -> string	
+}, typeof(AptInt)>
 
 -- =======================
 --> OPTIMIAZTION CONSTANTS
@@ -117,7 +115,7 @@ local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 		
 		--[[assert(
 			typeof(first) == "number",
-			"attempt to create BigInteger from a table with non-int values"
+			"attempt to create AptInt from a table with non-int values"
 		)]]
 		
 		return tbl, 1
@@ -132,21 +130,21 @@ local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 --> HELPER FUNCTIONS
 -- =================
 
-local function ArgumentToBigInteger(num: ValidMetamethodArgument?, errContext: string): BigInteger
-	local bigint: BigInteger;
+local function ArgumentToAptInt(num: ValidMetamethodArgument?, errContext: string): AptInt
+	local bigint: AptInt;
 
 	--> make sure toAdd is correct
-	if getmetatable(num :: BigInteger?) == BigInteger then
-		bigint = num :: BigInteger
+	if getmetatable(num :: AptInt?) == AptInt then
+		bigint = num :: AptInt
 	else
 		local numType: string = typeof(num)
 		
 		assert(
 			numType ~= "table" and typeConstructors[numType] ~= nil,
-			`attempt to perform ({errContext}) on BigInteger and {numType}`
+			`attempt to perform ({errContext}) on AptInt and {numType}`
 		)
 		
-		bigint = BigInteger.new(num)
+		bigint = AptInt.new(num)
 	end
 
 	return bigint
@@ -154,16 +152,16 @@ end
 
 -- Split a digit into its low "d" limbs and its high limbs. For example, split_at(12345, 3) 
 -- will extract the 3 final limbs, giving: high=12, low=345.
-local function GetKaratsubaLower(int: BigInteger, n: number): BigInteger
+local function GetKaratsubaLower(int: AptInt, n: number): AptInt
 	local limbs: {number} = int.limbs
 	
 	--> unsure if this is faster.
 	if #limbs < SAFE_UNPACK_THRESHOLD then
 		-- table.pack is faster here but FOR SOME REASON IT INCLUDES ["N"] IN THE ARRAY TOO?!
-		return BigInteger.new({unpack(limbs, 1, n)})
+		return AptInt.new({unpack(limbs, 1, n)})
 	end
 	
-	local result: BigInteger = BigInteger.new(tcreate(n, 0))
+	local result: AptInt = AptInt.new(tcreate(n, 0))
 	local resultlimbs: {number} = result.limbs
 	
 	for i: number = 1, n do
@@ -173,18 +171,18 @@ local function GetKaratsubaLower(int: BigInteger, n: number): BigInteger
 	return result
 end
 
-local function GetKaratsubaUpper(int: BigInteger, n: number): BigInteger
+local function GetKaratsubaUpper(int: AptInt, n: number): AptInt
 	-- {select(unpack(x))} is faster, but unpack only works up to a certain degree.
 	local limbs: {number} = int.limbs
 
 	if #limbs < SAFE_UNPACK_THRESHOLD then
 		-- select(n + 1, unpack(limbs)) is wayy faster than {unpack(limbs, n+1, #limbs)}
-		return BigInteger.new({
+		return AptInt.new({
 			select(n + 1, unpack(limbs)) :: number
 		})
 	end
 	
-	local result: BigInteger = BigInteger.new() -- TODO: tcreate here
+	local result: AptInt = AptInt.new() -- TODO: tcreate here
 	local resultLimbs: {number} = result.limbs
 	
 	for i: number = n + 1, #limbs do
@@ -194,15 +192,15 @@ local function GetKaratsubaUpper(int: BigInteger, n: number): BigInteger
 	return result
 end
 
-local function MultiplyKaratsuba(x: BigInteger, y: BigInteger): BigInteger
+local function MultiplyKaratsuba(x: AptInt, y: AptInt): AptInt
 	local m2: number = (max(#x.limbs, #y.limbs) + 1)//2
 
-	local low1: BigInteger, low2: BigInteger = GetKaratsubaLower(x, m2), GetKaratsubaLower(y, m2)
-	local high1: BigInteger, high2: BigInteger = GetKaratsubaUpper(x, m2), GetKaratsubaUpper(y, m2)
+	local low1: AptInt, low2: AptInt = GetKaratsubaLower(x, m2), GetKaratsubaLower(y, m2)
+	local high1: AptInt, high2: AptInt = GetKaratsubaUpper(x, m2), GetKaratsubaUpper(y, m2)
 	
-	local z0: BigInteger = low1:MultiplyRaw(low2)
-	local z1: BigInteger = low1:AddRaw(high1):MultiplyRaw(low2:AddRaw(high2))
-	local z2: BigInteger = high1:MultiplyRaw(high2)
+	local z0: AptInt = low1:MultiplyRaw(low2)
+	local z1: AptInt = low1:AddRaw(high1):MultiplyRaw(low2:AddRaw(high2))
+	local z2: AptInt = high1:MultiplyRaw(high2)
 
 	-- (z2 × BASE ^ (m2 × 2)) + ((z1 - z2 - z0) × BASE ^ m2) + z0
 	-- since base is a power of 10, we can just prepend zeros to avoid slow exponentiation
@@ -219,7 +217,7 @@ local function MultiplyKaratsuba(x: BigInteger, y: BigInteger): BigInteger
 	return result
 end
 
-local function StripLeadingZeros(bigint: BigInteger)
+local function StripLeadingZeros(bigint: AptInt)
 	while #bigint > 1 and bigint.limbs[#bigint] == 0 do
 		tremove(bigint.limbs, #bigint.limbs)
 	end
@@ -233,32 +231,32 @@ end
 --> METATABLE FUNCTIONS
 -- ====================
 
--- Returns a new BigInteger from given argument
-function BigInteger.new(num: ValidConstructor): BigInteger
+-- Returns a new AptInt from given argument
+function AptInt.new(num: ValidConstructor): AptInt
 	local limbs: {number}, signum: number = typeConstructors[typeof(num)](num)
 	
 	return setmetatable({
 		limbs = limbs,
 		signum = signum
-	}, BigInteger) :: BigInteger
+	}, AptInt) :: AptInt
 end
 
--- Returns a copy of the BigInteger.
-function BigInteger.clone(n: BigInteger): BigInteger
+-- Returns a copy of the AptInt.
+function AptInt.clone(n: AptInt): AptInt
 	return setmetatable({
 		limbs = tclone(n.limbs),
 		signum = n.signum
-	}, BigInteger) :: BigInteger
+	}, AptInt) :: AptInt
 end
 
--- Returns a new BigInteger with its sign flipped.
-function BigInteger:Negate(inPlace: boolean): BigInteger
+-- Returns a new AptInt with its sign flipped.
+function AptInt:Negate(inPlace: boolean): AptInt
 	if inPlace then
 		self.signum = -self.signum
 		return self
 	end
 	
-	local result: BigInteger = BigInteger.clone(self)
+	local result: AptInt = AptInt.clone(self)
 	result.signum = -result.signum
 	
 	return result
@@ -267,8 +265,8 @@ end
 --> ARITHMETIC FUNCTIONS
 -- =====================
 
--- Returns a new BigInteger = x, whose value is equal to a + b.
-function BigInteger:AddRaw(term: BigInteger): BigInteger
+-- Returns a new AptInt = x, whose value is equal to a + b.
+function AptInt:AddRaw(term: AptInt): AptInt
 	local selfSign: number, summandSign: number = self.signum, term.signum
 	local sameSign: boolean = selfSign == summandSign
 	
@@ -286,7 +284,7 @@ function BigInteger:AddRaw(term: BigInteger): BigInteger
 	local limbsSummand: {number}, limbsSelf: {number} = term.limbs, self.limbs
 	local limbsToAdd: number = max(#limbsSelf, #limbsSummand)
 
-	local result: BigInteger = BigInteger.new(tcreate(limbsToAdd, 0))
+	local result: AptInt = AptInt.new(tcreate(limbsToAdd, 0))
 
 	
 	--> from right to left
@@ -312,8 +310,8 @@ function BigInteger:AddRaw(term: BigInteger): BigInteger
 	return result
 end
 
--- Returns a new BigInteger = x, whose value is equal to a - b.
-function BigInteger:SubtractRaw(term: BigInteger): BigInteger
+-- Returns a new AptInt = x, whose value is equal to a - b.
+function AptInt:SubtractRaw(term: AptInt): AptInt
 	local selfSign: number, termSign: number = self.signum, term.signum
 	local sameSign: boolean = (selfSign == termSign)
 	
@@ -332,7 +330,7 @@ function BigInteger:SubtractRaw(term: BigInteger): BigInteger
 		return term:SubtractRaw(self):Negate(true)
 	end
 	
-	local result: BigInteger = BigInteger.new()
+	local result: AptInt = AptInt.new()
 	
 	local limbsSubrahend: {number} = term.limbs
 
@@ -356,13 +354,13 @@ function BigInteger:SubtractRaw(term: BigInteger): BigInteger
 	return result
 end
 
--- Returns a BigInteger = x, whose value is equal to a * b.
-function BigInteger:MultiplyRaw(factor: BigInteger): BigInteger
+-- Returns a AptInt = x, whose value is equal to a * b.
+function AptInt:MultiplyRaw(factor: AptInt): AptInt
 	local selfSign: number, factorSign: number = self.signum, factor.signum
 	
 	--> CASES
 	if selfSign == 0 or factorSign == 0 then
-		return BigInteger.new()
+		return AptInt.new()
 	end
 	
 	local selflimbs: {number} = self.limbs
@@ -372,14 +370,14 @@ function BigInteger:MultiplyRaw(factor: BigInteger): BigInteger
 		return MultiplyKaratsuba(self, factor)
 	end
 
-	local result: BigInteger = BigInteger.new(tcreate(0, #selflimbs))
+	local result: AptInt = AptInt.new(tcreate(0, #selflimbs))
 	
 	-- do normal o(n^2) schoolgrade multiplication
 	for i: number, digit: number in selflimbs do
 		local carry: number = 0
 		local prependedZeros: number = i - 1
 		
-		local mulResult: BigInteger = BigInteger.new(tcreate(prependedZeros + #factorlimbs, 0))
+		local mulResult: AptInt = AptInt.new(tcreate(prependedZeros + #factorlimbs, 0))
 		
 		for j: number, factorDigit: number in factorlimbs do
 			local mul: number = digit * factorDigit + carry
@@ -416,7 +414,7 @@ function BigInteger:MultiplyRaw(factor: BigInteger): BigInteger
 end
 
 -- Returns the quotient and remainder of a / b.
-function BigInteger:DivideRaw(divisor: BigInteger): (BigInteger, BigInteger)
+function AptInt:DivideRaw(divisor: AptInt): (AptInt, AptInt)
 	local divSign: number, selfSign: number = divisor.signum, self.signum
 	local sameSign: boolean = divSign == selfSign
 	
@@ -427,11 +425,11 @@ function BigInteger:DivideRaw(divisor: BigInteger): (BigInteger, BigInteger)
 	divisor.signum = abs(divSign)
 	
 	if divSign == 0 or selfSign == 0 then -- dividing by 0
-		return BigInteger.new(), BigInteger.new()
+		return AptInt.new(), AptInt.new()
 	elseif self:LowerThanRaw(divisor) then
-		return BigInteger.new(), BigInteger.new()
+		return AptInt.new(), AptInt.new()
 	elseif self:EqualsRaw(divisor) then -- dividing x/x = 1
-		return BigInteger.new({1}), BigInteger.new({1})
+		return AptInt.new({1}), AptInt.new({1})
 	end
 	
 	self.signum = selfSign
@@ -441,7 +439,7 @@ function BigInteger:DivideRaw(divisor: BigInteger): (BigInteger, BigInteger)
 	if #U == 1 and #V == 1 then -- single limb division
 		local mod: number = U[1] % V[1]
 		local q: number = round(U[1] * selfSign / V[1] * divSign)
-		return BigInteger.new({q}), BigInteger.new({mod})
+		return AptInt.new({q}), AptInt.new({mod})
 	end
 	
 	local divisorSinglelimb: boolean = #V == 1
@@ -453,18 +451,18 @@ function BigInteger:DivideRaw(divisor: BigInteger): (BigInteger, BigInteger)
 	--> d1. normalize
 	local Vn: {number}, Un: {number}, D: number?
 	if divisorSinglelimb then
-		Un, Vn = (self :: BigInteger):clone().limbs, {divisor.limbs[1]}
+		Un, Vn = (self :: AptInt):clone().limbs, {divisor.limbs[1]}
 	else
 		D = BASE // (V[#V] + 1)
-		local Dint: BigInteger = BigInteger.new(D)
+		local Dint: AptInt = AptInt.new(D)
 		Vn = divisor:MultiplyRaw(Dint).limbs
-		Un = (self :: BigInteger):MultiplyRaw(Dint).limbs
+		Un = (self :: AptInt):MultiplyRaw(Dint).limbs
 	end
 	
 	local Vnn: number = Vn[n]
 	local penultimateVn: number = Vn[n-1] or 0
 
-	local quotient: BigInteger = BigInteger.new(tcreate(m + 1, 0))
+	local quotient: AptInt = AptInt.new(tcreate(m + 1, 0))
 	
 	--> d2. init j
 	local qhat: number, rhat: number = 0, 0
@@ -542,7 +540,7 @@ function BigInteger:DivideRaw(divisor: BigInteger): (BigInteger, BigInteger)
 		Un[nPlusJ] = (Un[nPlusJ] + carry) % BASE
 	end
 	
-	local remainder: BigInteger = BigInteger.new(Un)
+	local remainder: AptInt = AptInt.new(Un)
 	StripLeadingZeros(remainder)
 	StripLeadingZeros(quotient)
 	
@@ -564,8 +562,8 @@ function BigInteger:DivideRaw(divisor: BigInteger): (BigInteger, BigInteger)
 	return quotient, remainder
 end
 
--- Returns a new string representation of a BigInteger
-function BigInteger:ToString(): string
+-- Returns a new string representation of a AptInt
+function AptInt:ToString(): string
 	local str: string = (self.signum == -1 and "-" or "")
 	if self.signum == 0 then
 		return "0"
@@ -589,8 +587,8 @@ end
 -- ==================
 
 -- Returns true if self == num, false if not.
-function BigInteger:EqualsRaw(num: BigInteger): boolean
-	if (#(self :: BigInteger).limbs ~= #num.limbs) or (self.signum ~= num.signum) then
+function AptInt:EqualsRaw(num: AptInt): boolean
+	if (#(self :: AptInt).limbs ~= #num.limbs) or (self.signum ~= num.signum) then
 		return false
 	end
 	
@@ -604,7 +602,7 @@ function BigInteger:EqualsRaw(num: BigInteger): boolean
 end
 
 -- Returns true if self < num, false if not.
-function BigInteger:LowerThanRaw(num: BigInteger): boolean
+function AptInt:LowerThanRaw(num: AptInt): boolean
 	local selfSign: number, numSign: number = self.signum, num.signum
 	local selfLen: number, numLen: number = #self.limbs, #num.limbs
 	
@@ -637,7 +635,7 @@ function BigInteger:LowerThanRaw(num: BigInteger): boolean
 end
 
 -- Returns true if self <= num, false if not.
-function BigInteger:LowerOrEqualToRaw(num: BigInteger): boolean
+function AptInt:LowerOrEqualToRaw(num: AptInt): boolean
 	local selfSign: number, numSign: number = self.signum, num.signum
 	local selfLen: number, numLen: number = #self.limbs, #num.limbs
 
@@ -673,9 +671,9 @@ end
 --> "BOOLEAN" FUNCTIONS
 -- ==================
 
--- Returns a new BigInteger = x, where self * 10^(BASE*amount) = x
-function BigInteger:LeftShift(amount: number): BigInteger
-	local result: BigInteger = BigInteger.clone(self)
+-- Returns a new AptInt = x, where self * 10^(BASE*amount) = x
+function AptInt:LeftShift(amount: number): AptInt
+	local result: AptInt = AptInt.clone(self)
 	
 	local tbl: {number} = result.limbs
 	
@@ -690,76 +688,76 @@ end
 --> METAMETHODS
 -- ============
 
-BigInteger.__unm = function(num: ValidMetamethodArgument): BigInteger
-	local bigint: BigInteger = ArgumentToBigInteger(num, "unm")
+AptInt.__unm = function(num: ValidMetamethodArgument): AptInt
+	local bigint: AptInt = ArgumentToAptInt(num, "unm")
 	
 	return bigint:Negate(false)
 end
 
-BigInteger.__add = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): BigInteger
-	local term1: BigInteger = ArgumentToBigInteger(a, "add")
-	local term2: BigInteger = ArgumentToBigInteger(b, "add")
+AptInt.__add = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): AptInt
+	local term1: AptInt = ArgumentToAptInt(a, "add")
+	local term2: AptInt = ArgumentToAptInt(b, "add")
 	
 	return term1:AddRaw(term2)
 end
 
-BigInteger.__sub = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): BigInteger
-	local term1: BigInteger = ArgumentToBigInteger(a, "sub")
-	local term2: BigInteger = ArgumentToBigInteger(b, "sub")
+AptInt.__sub = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): AptInt
+	local term1: AptInt = ArgumentToAptInt(a, "sub")
+	local term2: AptInt = ArgumentToAptInt(b, "sub")
 
 	return term1:SubtractRaw(term2)
 end
 
-BigInteger.__mul = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): BigInteger
-	local term1: BigInteger = ArgumentToBigInteger(a, "mul")
-	local term2: BigInteger = ArgumentToBigInteger(b, "mul")
+AptInt.__mul = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): AptInt
+	local term1: AptInt = ArgumentToAptInt(a, "mul")
+	local term2: AptInt = ArgumentToAptInt(b, "mul")
 
 	return term1:MultiplyRaw(term2)
 end
 
-local function divMeta(a: ValidMetamethodArgument, b: ValidMetamethodArgument): BigInteger
-	local term1: BigInteger = ArgumentToBigInteger(a, "div")
-	local term2: BigInteger = ArgumentToBigInteger(b, "div")
+local function divMeta(a: ValidMetamethodArgument, b: ValidMetamethodArgument): AptInt
+	local term1: AptInt = ArgumentToAptInt(a, "div")
+	local term2: AptInt = ArgumentToAptInt(b, "div")
 	
-	local quotient: BigInteger, _: BigInteger = term1:DivideRaw(term2)
+	local quotient: AptInt, _: AptInt = term1:DivideRaw(term2)
 	return quotient
 end
-BigInteger.__div, BigInteger.__idiv = divMeta, divMeta
+AptInt.__div, AptInt.__idiv = divMeta, divMeta
 
-BigInteger.__eq = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
-	local term1: BigInteger = ArgumentToBigInteger(a, "eq")
-	local term2: BigInteger = ArgumentToBigInteger(b, "eq")
+AptInt.__eq = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
+	local term1: AptInt = ArgumentToAptInt(a, "eq")
+	local term2: AptInt = ArgumentToAptInt(b, "eq")
 	
 	return term1:EqualsRaw(term2)
 end
 
-BigInteger.__lt = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
-	local term1: BigInteger = ArgumentToBigInteger(a, "lt")
-	local term2: BigInteger = ArgumentToBigInteger(b, "lt")
+AptInt.__lt = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
+	local term1: AptInt = ArgumentToAptInt(a, "lt")
+	local term2: AptInt = ArgumentToAptInt(b, "lt")
 	
 	return term1:LowerThanRaw(term2)
 end
 
-BigInteger.__le = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
-	local term1: BigInteger = ArgumentToBigInteger(a, "le")
-	local term2: BigInteger = ArgumentToBigInteger(b, "le")
+AptInt.__le = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
+	local term1: AptInt = ArgumentToAptInt(a, "le")
+	local term2: AptInt = ArgumentToAptInt(b, "le")
 
 	return term1:LowerOrEqualToRaw(term2)
 end
 
-BigInteger.__tostring = function(n: BigInteger): string
+AptInt.__tostring = function(n: AptInt): string
 	return n:ToString()
 end
 
-BigInteger.__len = function(n: BigInteger): number
+AptInt.__len = function(n: AptInt): number
 	return rawlen(n.limbs)
 end
 
 -- ===========
 --> EXTENSIONS
 -- ===========
-function BigInteger.Extend(func: (typeof(BigInteger)) -> ())
-	func(BigInteger)
+function AptInt.Extend(func: (typeof(AptInt)) -> ())
+	func(AptInt)
 end
 
-return BigInteger
+return AptInt
