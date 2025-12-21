@@ -30,14 +30,15 @@ export type AptInt = setmetatable<{
 	read AddRaw: (term: AptInt, term: AptInt) -> AptInt,
 	read SubtractRaw: (term: AptInt, term: AptInt) -> AptInt,
 	read MultiplyRaw: (factor: AptInt, factor: AptInt) -> AptInt,
-	read DivideRaw: (divisor: AptInt) -> (AptInt, AptInt),
-	read ModRaw: (div: AptInt) -> AptInt,
+	read DivideRaw: (dividend: AptInt, divisor: AptInt) -> (AptInt, AptInt),
+	read ModRaw: (n: AptInt, div: AptInt) -> AptInt,
 	
 	read EqualsRaw: (self: AptInt, num: AptInt) -> boolean,
 	read LowerThanRaw: (self: AptInt, num: AptInt) -> boolean,
 	read LowerOrEqualToRaw: (self: AptInt, num: AptInt) -> boolean,
 	
-	read ToString: (self: AptInt) -> string	
+	read ToString: (n: AptInt) -> string	,
+	read ToNumber: (n: AptInt) -> number,
 }, typeof(AptInt)>
 
 -- ================================
@@ -500,7 +501,7 @@ function AptInt:DivideRaw(divisor: AptInt): (AptInt, AptInt)
 	if divisorSinglelimb then
 		Un, Vn = (self :: AptInt):clone().limbs, {divisor.limbs[1]}
 	else
-		D = BASE // (V[#V] + 1)
+		D = BASE // (V[n] + 1)
 		local Dint: AptInt = AptInt.new(D)
 		Vn = divisor:MultiplyRaw(Dint).limbs
 		Un = (self :: AptInt):MultiplyRaw(Dint).limbs
