@@ -7,7 +7,7 @@
 -- AptInt.luau // fosterchild 2025 - Luau implementation of BigInteger, with added typechecking.
 -- Licensed under The Unlicense.
 
--- Documentation and source can be found at: https://github.com/fosterchild1/AptInt/tree/main
+-- Documentation and source can be found at: https://github.com/fosterchild1/AptInt/
 --]]
 -- ===============================================================
 
@@ -31,6 +31,7 @@ export type AptInt = setmetatable<{
 	read SubtractRaw: (term: AptInt, term: AptInt) -> AptInt,
 	read MultiplyRaw: (factor: AptInt, factor: AptInt) -> AptInt,
 	read DivideRaw: (divisor: AptInt) -> (AptInt, AptInt),
+	read ModRaw: (div: AptInt) -> AptInt,
 	
 	read EqualsRaw: (self: AptInt, num: AptInt) -> boolean,
 	read LowerThanRaw: (self: AptInt, num: AptInt) -> boolean,
@@ -39,9 +40,9 @@ export type AptInt = setmetatable<{
 	read ToString: (self: AptInt) -> string	
 }, typeof(AptInt)>
 
--- =======================
---> OPTIMIAZTION CONSTANTS
--- =======================
+-- ================================
+--> OPTIMIAZTION FUNCTION CONSTANTS
+-- ================================
 
 local log10: (number) -> number = math.log10
 local log: (number, number?) -> number = math.log
@@ -58,17 +59,17 @@ local tclone: <T>({T}) -> {T} = table.clone
 
 local sformat: (string, ...unknown) -> string = string.format
 
--- ==========
---> CONSTANTS
--- ==========
+-- =================
+--> NORMAL CONSTANTS
+-- =================
 
-local KARATSUBA_THRESHOLD: number = 300 -- in limbs, limit where karatsuba is faster than normal multiplication
+local KARATSUBA_THRESHOLD: number = 50 -- in limbs, limit where karatsuba is faster than normal multiplication
 local SAFE_UNPACK_THRESHOLD: number = 8000 -- unpack() max size in limbs
 
 local MAX_LOSSLESS_POW: number = 53 -- 2^53
 local MAX_LOSSLESS_INT: number = 2^MAX_LOSSLESS_POW-1
 
-local BASE_POW: number = 7 -- MUST SATISFY: 10^((BASE_POW+1) * 2) < 2^53, because of multiplying
+local BASE_POW: number = 7 -- MUST SATISFY: 10^((BASE_POW+1) * 2) < 2^53, because of multiplyraw and divideraw
 local BASE: number = 10 ^ BASE_POW
 
 --> CONSTRUCTOR
@@ -113,10 +114,10 @@ local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 			return {0}, 0
 		end
 		
-		--[[assert(
-			typeof(first) == "number",
-			"attempt to create AptInt from a table with non-int values"
-		)]]
+		--> if is faster than assert, we use if here since its called a lot of times
+		if typeof(first) ~= "number" then
+			error("attempt to create AptInt from a table with non-int values")
+		end
 		
 		return tbl, 1
 	end,
@@ -244,6 +245,18 @@ local function TryModExp(limb: number, div: number, base: number): (boolean, num
 	end	
 	
 	return true, limb % div
+end
+
+local function LowerThanAbsolute(x: AptInt, y: AptInt): boolean
+	local xLimbs: {number}, yLimbs: {number} = x.limbs, y.limbs
+	for i: number = #xLimbs, 1, -1 do
+		local xDigit: number, yDigit: number = xLimbs[i], yLimbs[i] or 0
+		if xDigit == yDigit then continue end
+
+		return xDigit < yDigit
+	end
+
+	return false 
 end
 
 local function StripLeadingZeros(n: AptInt)
@@ -449,16 +462,15 @@ function AptInt:DivideRaw(divisor: AptInt): (AptInt, AptInt)
 	local divSign: number, selfSign: number = divisor.signum, self.signum
 	local sameSign: boolean = divSign == selfSign
 	
-	--> CASES
-	
-	--> avoid clone
+	--> CASES (oh dear..)
+	--> TODO: refactor
 	if divSign == 0 or selfSign == 0 then -- dividing by 0
 		return AptInt.new(), AptInt.new()
-	elseif self:LowerThanRaw(divisor) then
+	elseif LowerThanAbsolute(self, divisor) then
 		if selfSign == 1 and divSign == -1 then
-			return AptInt.new(), divisor:AddRaw(self)
+			return AptInt.new({-1}), divisor:AddRaw(self)
 		elseif selfSign == -1 and divSign == 1 then
-			return AptInt.new({1}), divisor:SubtractRaw(self:Negate(false))
+			return AptInt.new({-1}), divisor:SubtractRaw(self:Negate(false))
 		elseif sameSign and divSign == -1 then
 			return AptInt.new(), self:clone()
 		end
@@ -469,9 +481,6 @@ function AptInt:DivideRaw(divisor: AptInt): (AptInt, AptInt)
 	elseif self:Negate(false):EqualsRaw(divisor) or self:EqualsRaw(divisor:Negate(false)) then -- -x/x = -1
 		return AptInt.new({-1}), AptInt.new()
 	end
-	
-	self.signum = selfSign
-	divisor.signum = divSign
 	
 	local U: {number}, V: {number} = self.limbs, divisor.limbs
 	if #U == 1 and #V == 1 then -- single limb division
@@ -598,7 +607,6 @@ function AptInt:DivideRaw(divisor: AptInt): (AptInt, AptInt)
 	StripLeadingZeros(quotient)
 	
 	--> return
-	--> TODO: genuinely what is this
 	remainder = CorrectRemainder(self, divisor, remainder)
 	if not sameSign then
 		quotient:Negate(true)
@@ -608,7 +616,7 @@ function AptInt:DivideRaw(divisor: AptInt): (AptInt, AptInt)
 end
 
 function AptInt:ModRaw(div: AptInt): AptInt
-	--> TODO: thjis can probably be refactored somehow
+	--> TODO: THIS IS REAAAAALLY UGLY.
 	local divLimbs: {number} = div.limbs
 	local divLimbAmount: number, selfLimbAmount: number = #divLimbs, #(self :: AptInt).limbs
 
@@ -627,6 +635,12 @@ function AptInt:ModRaw(div: AptInt): AptInt
 	end
 	
 	--> single limb divisor optimizations
+	-- we check trymodexp which is expensive and uses math.log.
+	-- performance difference shouldnt matter that much, since
+	-- single limb division already is insanely fast,
+	-- but since we check once for each number, it adds up
+	
+	--> TODO: add argument that disables this modexp
 	local success: boolean, mod: number = TryModExp(selfFirst, divFirst, 2) -- 2
 	if success then return AptInt.new({mod}) end
 	
@@ -810,6 +824,13 @@ local function divMeta(a: ValidMetamethodArgument, b: ValidMetamethodArgument): 
 	return quotient
 end
 AptInt.__div, AptInt.__idiv = divMeta, divMeta
+
+AptInt.__mod = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): AptInt
+	local term1: AptInt = ArgumentToAptInt(a, "mod")
+	local term2: AptInt = ArgumentToAptInt(b, "mod")
+
+	return term1:ModRaw(term2)
+end
 
 AptInt.__eq = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
 	local term1: AptInt = ArgumentToAptInt(a, "eq")
