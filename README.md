@@ -29,11 +29,11 @@ The results are updated every time the performance gets improved.
 | Digit count | Addition | Subtraction | Multiplication | Division |
 | ---  | --- | --- | --- | --- |
 | 1 | 1μs | 1μs | 4μs | 6μs |
-| 50 | 1μs | 3μs | 25μs | 4μs |
-| 100 | 1μs | 7μs | 41μs | 13μs |
-| 500 | 2μs | 9μs | 515μs | 408μs |
-| 1,000 | 29μs | 24μs | 1ms | 1ms |
-| 5,000 | 42μs | 30μs | 6ms | 22ms |
-| 10,000 | 87μs | 80μs | 14ms | 81ms |
-| 50,000 | 335μs | 289μs | 77ms | 1s |
-| 100,000 | 515μs | 580μs | 202ms | 6s |
+| 50 | 1μs | 3μs | 25μs | 24μs |
+| 100 | 1μs | 7μs | 41μs | 31μs |
+| 500 | 2μs | 9μs | 515μs | 114μs |
+| 1,000 | 29μs | 24μs | 1ms | 353μs |
+| 5,000 | 42μs | 30μs | 6ms | 7ms |
+| 10,000 | 87μs | 80μs | 14ms | 31ms |
+| 50,000 | 335μs | 289μs | 74ms | 654ms |
+| 100,000 | 515μs | 580μs | 202ms | 2.5s |
