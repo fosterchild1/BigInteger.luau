@@ -32,6 +32,7 @@ export type AptInt = setmetatable<{
 	read MultiplyRaw: (factor: AptInt, factor: AptInt) -> AptInt,
 	read DivideRaw: (dividend: AptInt, divisor: AptInt) -> (AptInt, AptInt),
 	read ModRaw: (n: AptInt, div: AptInt) -> AptInt,
+	read PowRaw: (n: AptInt, pow: AptInt) -> AptInt,
 	
 	read EqualsRaw: (self: AptInt, num: AptInt) -> boolean,
 	read LowerThanRaw: (self: AptInt, num: AptInt) -> boolean,
@@ -64,7 +65,7 @@ local sformat: (string, ...unknown) -> string = string.format
 --> NORMAL CONSTANTS
 -- =================
 
-local KARATSUBA_THRESHOLD: number = 50 -- in limbs, limit where karatsuba is faster than normal multiplication
+local KARATSUBA_THRESHOLD: number = 45 -- in limbs, limit where karatsuba is faster than normal multiplication
 local SAFE_UNPACK_THRESHOLD: number = 8000 -- unpack() max size in limbs
 
 local MAX_LOSSLESS_POW: number = 53 -- 2^53
@@ -98,6 +99,7 @@ local typeConstructors: {[string]: (any) -> ({number}, number)} = {
 		if num == 0 then
 			return {0}, 0
 		end
+		
 		local actualSign: number = sign(num)
 		num = abs(num)
 		
@@ -299,6 +301,11 @@ function AptInt.new(num: ValidConstructor): AptInt
 	}, AptInt) :: AptInt
 end
 
+--> this is ugly
+local AP_ZERO: AptInt = AptInt.new()
+local AP_ONE: AptInt = AptInt.new({1})
+local AP_TWO: AptInt = AptInt.new({2})
+
 -- Returns a copy of the AptInt.
 function AptInt.clone(n: AptInt): AptInt
 	return setmetatable({
@@ -441,9 +448,6 @@ function AptInt:MultiplyRaw(factor: AptInt): AptInt
 			continue
 		end
 		
-		--> TODO: get rid of mulResult
-		local mulResult: AptInt = AptInt.new(tcreate(prependedZeros + #selflimbs, 0))
-		
 		for j: number, selfDigit: number in selflimbs do
 			local mul: number = selfDigit * factorDigit + carry
 			
@@ -454,25 +458,12 @@ function AptInt:MultiplyRaw(factor: AptInt): AptInt
 				carry = 0
 			end
 			
-			mulResult.limbs[j + prependedZeros] = mul
+			result.limbs[j + prependedZeros] = mul
 		end
 		
-		--> carry can "ripple" through the number. for example: 9999 + 1
-		while carry > 0 do
-			local last: number? = mulResult.limbs[#mulResult.limbs + 1]
-			local sum: number = (last or 0) + carry
-			
-			if sum >= BASE then
-				carry = 1
-				sum = sum - BASE
-			else
-				carry = 0
-			end
-			
-			mulResult.limbs[#mulResult.limbs + 1] = sum
+		if carry > 0 then
+			result.limbs[#result.limbs + 1] = carry
 		end
-		
-		result = result:AddRaw(mulResult)
 	end
 	
 	result.signum = (selfSign ~= factorSign and -1 or 1)
@@ -642,6 +633,7 @@ function AptInt:DivideRaw(divisor: AptInt): (AptInt, AptInt)
 	return quotient, remainder
 end
 
+-- Returns the remainder of a / b.
 function AptInt:ModRaw(div: AptInt): AptInt
 	--> TODO: THIS IS REAAAAALLY UGLY.
 	local divLimbs: {number} = div.limbs
@@ -679,6 +671,58 @@ function AptInt:ModRaw(div: AptInt): AptInt
 	
 	local _: AptInt, r: AptInt = self:DivideRaw(div)
 	return r
+end
+
+-- Returns a new AptInt x, whose value is equal to a ^ b.
+function AptInt:PowRaw(pow: AptInt)
+	local selfSign: number, powSign: number = self.signum, pow.signum
+	local selfLimbs: {number}, powLimbs: {number} = self.limbs, pow.limbs
+	
+	--> CASES
+	if powSign == 0 then
+		return AptInt.new({1})
+	elseif selfSign == 0 then
+		return AptInt.new()
+	end
+	
+	if #powLimbs == 1 and powLimbs[1] == 1 then
+		return self:clone()
+	elseif #selfLimbs == 1 and selfLimbs[1] == 1 then
+		return AP_ONE:clone()
+	end
+	
+	local result: AptInt = AP_ONE:clone()
+	local selfClone: AptInt = self:clone()
+	
+	--> single-limb exponentiation
+	if #powLimbs == 1 then
+		local n: number = powLimbs[1]
+		while n > 0 do
+			if n % 2 ~= 0 then
+				result = selfClone:MultiplyRaw(result)
+			end
+			
+			selfClone = selfClone:MultiplyRaw(selfClone)
+			n //= 2
+		end
+		
+		return result
+	end
+	
+	--> exponentiation by squaring
+	local powClone: AptInt = pow:clone()
+	
+	while AP_ZERO:LowerThanRaw(result) do
+		if powClone.limbs[1] % 2 ~= 0 then
+			result = selfClone:MultiplyRaw(result)
+			--powClone = powClone:SubtractRaw(AP_ONE)
+		end
+		
+		selfClone = selfClone:MultiplyRaw(selfClone)
+		powClone = powClone:DivideRaw(AP_TWO)
+	end
+	
+	return result
 end
 
 -- ==================
@@ -857,6 +901,13 @@ AptInt.__mod = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument):
 	local term2: AptInt = ArgumentToAptInt(b, "mod")
 
 	return term1:ModRaw(term2)
+end
+
+AptInt.__pow = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): AptInt
+	local term1: AptInt = ArgumentToAptInt(a, "mod")
+	local term2: AptInt = ArgumentToAptInt(b, "mod")
+
+	return term1:PowRaw(term2)
 end
 
 AptInt.__eq = function(a: ValidMetamethodArgument, b: ValidMetamethodArgument): boolean
